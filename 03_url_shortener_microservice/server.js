@@ -21,14 +21,14 @@ const urlSchema = new mongoose.Schema({
 const Url = mongoose.model('Url', urlSchema);
 
 app.get('/', (req, res) => {
-  res.send('URL Shortener with MongoDB');
+  res.send('URL Shortener Microservice');
 });
 
 app.post('/api/shorturl', async (req, res) => {
   const userUrl = req.body.url;
 
-  if (!userUrl) {
-    return res.json({ error: 'missing url' });
+  if (!userUrl || typeof userUrl !== 'string') {
+    return res.json({ error: 'invalid url' });
   }
 
   let urlIsValid = false;
