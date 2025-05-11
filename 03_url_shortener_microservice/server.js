@@ -7,6 +7,7 @@ const dns = require('dns');
 
 const app = express();
 
+app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
@@ -16,68 +17,73 @@ mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopol
 
 const port = process.env.PORT || 3000;
 
-const schema = new mongoose.Schema(
-  {
-    original: { type: String, required: true },
-    short: { type: Number, required: true }
-  }
-);
-
-const Url = mongoose.model('Url', schema);
-
-app.use(cors());
-
-app.get('/', function (req, res) {
-  res.send('URL shortener microservice');
+const urlSchema = new mongoose.Schema({
+  original_url: { type: String, required: true },
+  short_url: { type: Number, required: true }
 });
 
+const Url = mongoose.model('Url', urlSchema);
+
+app.get('/', (req, res) => {
+  res.send('URL Shortener Microservice');
+});
+
+// Endpoint to get the original URL using short URL
 app.get("/api/shorturl/:input", (req, res) => {
   const input = parseInt(req.params.input);
 
-  Url.findOne({ short: input }, function (err, data) {
+  Url.findOne({ short_url: input }, function (err, data) {
     if (err || data === null) {
       return res.json({ error: "URL NOT FOUND" });
     }
-    return res.redirect(data.original);
+    return res.redirect(data.original_url);
   });
 });
 
-app.post("/api/shorturl", async (req, res) => {
-  const bodyUrl = req.body.url;
-  const urlRegex = new RegExp(/https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/\/=]*)/);
+// Endpoint to create a new short URL
+app.post('/api/shorturl', async (req, res) => {
+  const userUrl = req.body.url;
 
-  if (!bodyUrl.match(urlRegex)) {
-    return res.json({ error: "Invalid URL" });
+  if (!userUrl) {
+    return res.json({ error: 'missing url' });
   }
 
-  let index = 1;
-
+  let urlIsValid = false;
   try {
-    const lastUrl = await Url.findOne({}).sort({ short: 'desc' }).exec();
-    index = lastUrl !== null ? lastUrl.short + 1 : index;
-
-    dns.lookup(new URL(bodyUrl).hostname, function (err, address, family) {
-      if (err) {
-        return res.json({ error: "Invalid URL" });
-      }
-
-      Url.findOneAndUpdate(
-        { original: bodyUrl },
-        { original: bodyUrl, short: index },
-        { new: true, upsert: true }
-      ).then((newUrl) => {
-        res.json({
-          original_url: bodyUrl,
-          short_url: newUrl.short
-        });
-      });
-    });
+    new URL(userUrl);
+    urlIsValid = true;
   } catch (err) {
-    console.error("Error during URL processing:", err);
-    res.json({ error: "Something went wrong" });
+    urlIsValid = false;
+  }
+
+  if (!urlIsValid) {
+    return res.json({ error: 'invalid url' });
+  }
+
+  const foundUrl = await Url.findOne({ original_url: userUrl });
+
+  if (foundUrl) {
+    res.json({
+      original_url: foundUrl.original_url,
+      short_url: foundUrl.short_url
+    });
+  } else {
+    const totalUrls = await Url.countDocuments();
+
+    const newShortUrl = new Url({
+      original_url: userUrl,
+      short_url: totalUrls + 1
+    });
+
+    await newShortUrl.save();
+
+    res.json({
+      original_url: newShortUrl.original_url,
+      short_url: newShortUrl.short_url
+    });
   }
 });
 
 app.listen(port, function () {
-  console.log(`Listening on port ${port}`);
+  console.log('The app is running on port', port);
 });
