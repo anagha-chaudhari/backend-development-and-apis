@@ -48,8 +48,16 @@ app.post('/api/shorturl', async (req, res) => {
     return res.json({ error: 'missing url' });
   }
 
+  // Validating the URL with a regex for proper format
+  const urlRegex = /^(https?:\/\/)?([a-zA-Z0-9\-]+\.)+[a-zA-Z]{2,6}(:\d+)?(\/[-a-zA-Z0-9@:%_+.~#?&/=]*)?$/;
+
+  if (!urlRegex.test(userUrl)) {
+    return res.json({ error: 'invalid url' });
+  }
+
   let urlIsValid = false;
   try {
+    // Attempt to create a new URL object to check if it's valid
     new URL(userUrl);
     urlIsValid = true;
   } catch (err) {
@@ -60,6 +68,7 @@ app.post('/api/shorturl', async (req, res) => {
     return res.json({ error: 'invalid url' });
   }
 
+  // Check if the URL already exists in the database
   const foundUrl = await Url.findOne({ original_url: userUrl });
 
   if (foundUrl) {
@@ -68,6 +77,7 @@ app.post('/api/shorturl', async (req, res) => {
       short_url: foundUrl.short_url
     });
   } else {
+    // Create new short URL based on the number of documents in the collection
     const totalUrls = await Url.countDocuments();
 
     const newShortUrl = new Url({
