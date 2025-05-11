@@ -1,84 +1,84 @@
 require('dotenv').config();
+
 const express = require('express');
-const app = express();
 const cors = require('cors');
+const app = express();
 const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
 
-app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
-app.use(express.json());
+app.use(bodyParser.json());
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.log("MongoDB connection error: ", err));
+if (!process.env.DB_URI) {
+    console.error("Missing DB_URI in environment variables.");
+    process.exit(1); 
+}
 
-const urlSchema = new mongoose.Schema({
-  original_url: { type: String, required: true },
-  short_url: { type: Number, required: true }
+mongoose.connect(process.env.DB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+    .then(() => console.log('MongoDB connected'))
+    .catch(err => console.error('MongoDB connection error:', err));
+
+const port = process.env.PORT || 3000;
+
+// Model
+const schema = new mongoose.Schema(
+    {
+        original: { type: String, required: true },
+        short: { type: Number, required: true }
+    }
+);
+const Url = mongoose.model('Url', schema);
+
+app.use(cors());
+
+app.use('/public', express.static(`${process.cwd()}/public`));
+
+app.get('/', function (req, res) {
+    res.sendFile(process.cwd() + '/views/index.html');
 });
 
-const Url = mongoose.model('Url', urlSchema);
 
-app.get('/', (req, res) => {
-  res.send('URL Shortener Microservice');
-});
+app.get("/api/shorturl/:input", (req, res) => {
+    const input = parseInt(req.params.input);
 
-app.post('/api/shorturl', async (req, res) => {
-  const userUrl = req.body.url;
-
-  if (!userUrl || typeof userUrl !== 'string') {
-    return res.json({ error: 'invalid url' });
-  }
-
-  let urlIsValid = false;
-  try {
-    new URL(userUrl);
-    urlIsValid = true;
-  } catch (err) {
-    urlIsValid = false;
-  }
-
-  if (!urlIsValid) {
-    return res.json({ error: 'invalid url' });
-  }
-
-  const foundUrl = await Url.findOne({ original_url: userUrl });
-
-  if (foundUrl) {
-    res.json({
-      original_url: foundUrl.original_url,
-      short_url: foundUrl.short_url
+    Url.findOne({ short: input }, function (err, data) {
+        if (err || data === null) {
+            return res.json({ error: "URL NOT FOUND" });
+        }
+        return res.redirect(data.original);
     });
-  } else {
-    const totalUrls = await Url.countDocuments();
-
-    const newShortUrl = new Url({
-      original_url: userUrl,
-      short_url: totalUrls + 1
-    });
-
-    await newShortUrl.save();
-
-    res.json({
-      original_url: newShortUrl.original_url,
-      short_url: newShortUrl.short_url
-    });
-  }
 });
 
-app.get('/api/shorturl/:short', async (req, res) => {
-  const shortId = parseInt(req.params.short);
-  const foundUrl = await Url.findOne({ short_url: shortId });
+app.post("/api/shorturl", async (req, res) => {
+    const bodyUrl = req.body.url;
+    const urlRegex = new RegExp(/https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&\/\/=]*)/);
 
-  if (foundUrl) {
-    res.redirect(foundUrl.original_url);
-  } else {
-    res.status(404).send('Short URL not found');
-  }
+    if (!bodyUrl.match(urlRegex)) {
+        return res.json({ error: "Invalid URL" });
+    }
+
+    let index = 1;
+
+    try {
+        const lastUrl = await Url.findOne({}).sort({ short: 'desc' }).exec();
+        index = lastUrl !== null ? lastUrl.short + 1 : index;
+
+        const newUrl = await Url.findOneAndUpdate(
+            { original: bodyUrl },
+            { original: bodyUrl, short: index },
+            { new: true, upsert: true }
+        );
+
+        res.json({
+            original_url: bodyUrl,
+            short_url: newUrl.short
+        });
+    } catch (err) {
+        console.error("Error during URL processing:", err);
+        res.json({ error: "Something went wrong" });
+    }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, function () {
-  console.log('The app is running on port', PORT);
+app.listen(port, function () {
+    console.log(`The app is listening on port ${port}`);
 });
