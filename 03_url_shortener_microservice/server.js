@@ -13,7 +13,6 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.log("MongoDB connection error: ", err));
 
-
 const urlSchema = new mongoose.Schema({
   original_url: { type: String, required: true },
   short_url: { type: Number, required: true }
@@ -27,6 +26,10 @@ app.get('/', (req, res) => {
 
 app.post('/api/shorturl', async (req, res) => {
   const userUrl = req.body.url;
+
+  if (!userUrl) {
+    return res.json({ error: 'missing url' });
+  }
 
   let urlIsValid = false;
   try {
